@@ -6,6 +6,7 @@ import atexit
 import os
 import logging
 from datetime import datetime, timedelta
+import subprocess
 
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -21,6 +22,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 ARP_REPLY_THRESHOLD = 5  
 TIMEOUT_SECONDS = 60  # 5 minutes timeout
+BLOCK_THRESHOLD = 10  # Threshold for blocking
+
+blocked_ips = set()  # Maintain a set of blocked IPs
+
+def block_ip(ip_address):
+    try:
+        # Use subprocess to execute iptables command to block the IP
+        subprocess.run(["sudo", "iptables", "-A", "INPUT", "-s", ip_address, "-j", "DROP"])
+        logger.warning(f"Blocked traffic from suspected IP: {ip_address}")
+        blocked_ips.add(ip_address)  # Add the IP to the set of blocked IPs
+    except Exception as e:
+        logger.error(f"Error blocking IP: {e}")
 
 def update_dict(arp, our_ip):
     with lock:
@@ -29,8 +42,8 @@ def update_dict(arp, our_ip):
         target_ip = arp[8]
         arp_operation = arp[4]
 
-        # Check if the sender is not our own IP
-        if sender_ip != our_ip:
+        # Check if the sender is not our own IP and not blocked
+        if sender_ip != our_ip and sender_ip not in blocked_ips:
             # Initialize or retrieve the entry for the sender IP
             entry = dct.setdefault(sender_ip, {"mac": sender_mac, "reply_count": 0, "last_reply_time": None})
 
@@ -51,6 +64,15 @@ def update_dict(arp, our_ip):
                     if entry["reply_count"] > ARP_REPLY_THRESHOLD:
                         logger.warning(f"Possible ARP spoofing detected! Received {entry['reply_count']} ARP replies from IP: {sender_ip}.")
 
+                        # Check if the block threshold is reached
+                        if entry["reply_count"] > BLOCK_THRESHOLD:
+                            block_ip(sender_ip)
+
+                        # Attempt to retrieve the IP associated with the MAC address
+                        ip_address = get_ip_from_mac(sender_mac)
+                        if ip_address:
+                            logger.warning(f"The MAC address {sender_mac} is associated with the IP address {ip_address}.")
+
                     # Update the last reply time
                     entry["last_reply_time"] = datetime.now()
 
@@ -66,16 +88,32 @@ def get_local_ip():
         s.close()
     return local_ip
 
+def get_ip_from_mac(mac_address):
+    try:
+        print("inside get mac")
+        print(mac_address)
+        # Use ARP to resolve the MAC address to an IP address
+        ip_address = socket.gethostbyaddr(mac_address)[0]
+        print(ip_address)
+        return ip_address
+    except (socket.herror, socket.gaierror):
+        return None
+
 def initiate_dict():
     try:
         with open("arp_dict.json", "r") as json_file:
             loaded_dict = json.load(json_file)
-        return loaded_dict
+            # Convert string representations of datetime to actual datetime objects
+            for ip, entry in loaded_dict.items():
+                if entry["last_reply_time"] is not None:
+                    entry["last_reply_time"] = datetime.fromisoformat(entry["last_reply_time"])
+            return loaded_dict
     except FileNotFoundError:
         return {}
     except json.JSONDecodeError:
         logger.error("Error decoding JSON. Using an empty dictionary.")
         return {}
+
 
 def save_dict_to_json():
     with lock:
