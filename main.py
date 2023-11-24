@@ -1,5 +1,5 @@
 import socket
-from utils import ethernet_head, arp_head
+from utils import ethernet_head, arp_head, get_local_ip, get_ip_from_mac
 import threading
 import json
 import atexit
@@ -76,28 +76,6 @@ def update_dict(arp, our_ip):
                     # Update the last reply time
                     entry["last_reply_time"] = datetime.now()
 
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # doesn't even have to be reachable
-        s.connect(('10.255.255.255', 1))
-        local_ip = s.getsockname()[0]
-    except Exception:
-        local_ip = '127.0.0.1'
-    finally:
-        s.close()
-    return local_ip
-
-def get_ip_from_mac(mac_address):
-    try:
-        print("inside get mac")
-        print(mac_address)
-        # Use ARP to resolve the MAC address to an IP address
-        ip_address = socket.gethostbyaddr(mac_address)[0]
-        print(ip_address)
-        return ip_address
-    except (socket.herror, socket.gaierror):
-        return None
 
 def initiate_dict():
     try:
