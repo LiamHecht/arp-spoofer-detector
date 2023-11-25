@@ -28,32 +28,30 @@ blocked_ips = set()  # Maintain a set of blocked IPs
 
 def block_ip(ip_address):
     try:
-        # Use subprocess to execute iptables command to block the IP
+        #  Command to block the IP
         subprocess.run(["sudo", "iptables", "-A", "INPUT", "-s", ip_address, "-j", "DROP"])
         logger.warning(f"Blocked traffic from suspected IP: {ip_address}")
         blocked_ips.add(ip_address)  # Add the IP to the set of blocked IPs
     except Exception as e:
         logger.error(f"Error blocking IP: {e}")
 
-def update_dict(arp, our_ip):
+def update_dict(arp, local_ip):
     with lock:
         sender_ip = arp[6]
         sender_mac = arp[5]
         target_ip = arp[8]
         arp_operation = arp[4]
 
-        # Check if the sender is not our own IP and not blocked
-        if sender_ip != our_ip and sender_ip not in blocked_ips:
+        # Check if the sender is not my local IP and not blocked
+        if sender_ip != local_ip and sender_ip not in blocked_ips:
             # Initialize or retrieve the entry for the sender IP
             entry = dct.setdefault(sender_ip, {"mac": sender_mac, "reply_count": 0, "last_reply_time": None})
 
-            # Check if the target IP is our own IP
-            if target_ip == our_ip:
-                # Check if it's an ARP Reply
+            # Check if the target IP is my local IP
+            if target_ip == local_ip:
                 if arp_operation == "ARP Reply":
                     # Increment the ARP reply count for the sender
                     entry["reply_count"] += 1
-
                     # Check if the last reply was received more than TIMEOUT_SECONDS ago
                     if entry["last_reply_time"] is None or (datetime.now() - entry["last_reply_time"]).total_seconds() > TIMEOUT_SECONDS:
                         entry["reply_count"] = 1
