@@ -47,7 +47,7 @@ def get_ip_from_mac(mac_address):
     try:
         print("inside get mac")
         print(mac_address)
-        # Use ARP to resolve the MAC address to an IP address
+        # Use ARP to resolve the MAC address of an IP address
         ip_address = socket.gethostbyaddr(mac_address)[0]
         print(ip_address)
         return ip_address
